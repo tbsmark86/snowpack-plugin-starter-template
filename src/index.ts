@@ -5,6 +5,7 @@ import { ESLint } from 'eslint';
 import * as http from 'http';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import * as colors from 'colors/safe';
 
 interface Options {
     // print extra debug info
@@ -22,15 +23,25 @@ interface Options {
     karmaDisable: boolean;
     // eslint pattern, defaults to './'
     eslintFiles?: string|string[];
+    // switch eslint handling
+    eslintRun?: 'never'|'force'|'normal';
 }
-
 
 const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, opt?: Options) => {
     const rootDir = ts.sys.getCurrentDirectory();
 
     let debug = function(..._args: any[]) {};
     if(opt?.debug) {
-	debug = function(...args: any[]) {console.debug(...args)};
+	debug = function(...args: any[]) {
+	    // white is grey ???
+	    console.debug(colors.white('[ts-es-karma]'), ...args)
+	};
+    }
+    function info(...args: any[]) {
+	console.info(colors.green('[ts-es-karma]'), ...args);
+    }
+    function error(...args: any[]) {
+	console.error(colors.red('[ts-es-karma]'), ...args);
     }
 
     // Map Watche Requests form Typescript to Snowpack
@@ -50,7 +61,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		try {
 		    cb(file, ts.FileWatcherEventKind.Changed);
 		} catch(err) {
-		    console.error(`Failed to execute typescript-watcher for ${file}`, err);
+		    error(`Failed to execute typescript-watcher for ${file}`, err);
 		}
 	    }
 	}
@@ -67,7 +78,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	http.get(host + file, (res) => {
 	    const { statusCode } = res;
 	    if (statusCode !== 200) {
-		console.error(`Can\'t generate file for karma. Got ${statusCode} for ${file} from snowpack-server`);
+		error(`Can\'t generate file for karma. Got ${statusCode} for ${file} from snowpack-server`);
 		res.resume();
 		return;
 	    }
@@ -87,25 +98,25 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		    await fs.writeFile(karmaFile, rawData, 'utf-8');
 		    debug('Push to karma', karmaFile);
 		} catch(err) {
-		    console.error(`Can\'t write ${karmaFile} for karma`, err);
+		    error(`Can\'t write ${karmaFile} for karma`, err);
 		}
 		startKarmaServer && startKarmaServer();
 	    });
 	}).on('error', (e) => {
-	    console.error(`Can\'t request ${file} for from snowpack-server`, e);
+	    error(`Can\'t request ${file} for from snowpack-server`, e);
 	});
     }
 
     function initKarma() {
 	if(!karmaOutput || opt?.karmaDisable) {
-	    debug('karma disabled');
+	    info('Karma Disabled');
 	    return;
 	}
 	debug('start karma');
 	const Karma = require('karma').Server
 	const karmaConfig = { configFile: path.join(rootDir, opt?.karmaConf ?? 'karma.conf.js') };
 	const karma = new Karma(karmaConfig, function(exitCode: any) {
-	    console.error('Karma has exited with ' + exitCode)
+	    error('Karma has exited with ' + exitCode)
 	});
 	// On the first start there are no output-files available therefore
 	// karama complains over non-matching patterns.
@@ -115,6 +126,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	// Beside this it also is more 'sane' to start on after each other.
 	startKarmaServer = function() {
 	    setTimeout(function() {
+		info('Start Karma');
 		karma.start();
 	    }, 50);
 	    startKarmaServer = null;
@@ -122,7 +134,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	// Handle SIGINT manually otherwise you need to press it twice to
 	// first kill karma
 	process.on('SIGINT', function() {
-	    console.log('[ts-es-karma] Exiting ...');
+	    info('Exiting ...');
 	    karma.stop();
 	    process.exit();
 	});
@@ -208,7 +220,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 
 	const origCreateProgram = host.createProgram;
 	host.createProgram = (rootNames, options, host, oldProgram) => {
-	    console.log('[ts-es-karma] Run typescript check ...');
+	    info('Run typescript check ...');
 	    status = Status.Running;
 	    return origCreateProgram(rootNames, options, host, oldProgram);
 	};
@@ -244,7 +256,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	    cache: true,
 	    cacheLocation: path.join(rootDir, 'node_modules', 'ts-es-karma_eslintcache')
 	});
-	let formatter = {format: (_results: any) => console.error('missing eslint formatter') };
+	let formatter = {format: (_results: any) => error('missing eslint formatter') };
 	eslint.loadFormatter('stylish').then((res) => formatter = res);
 
 	return function() {
@@ -258,7 +270,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		    debug('Strange duplicate resolve of eslint promise');
 		}
 	    }).catch((err) => {
-		console.error('Eslint Failed', err);
+		error('Eslint Failed', err);
 	    });
 	}
     }
