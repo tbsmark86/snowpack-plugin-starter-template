@@ -1,2 +1,5 @@
 node_modules
 pkg
+src/*.js
+snowpack-typescript-eslint-karma-*.tgz
+
