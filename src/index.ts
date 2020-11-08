@@ -1,11 +1,11 @@
 import type { SnowpackPluginFactory, SnowpackConfig } from 'snowpack';
 
 import * as ts from 'typescript';
-import { ESLint } from 'eslint';
 import * as http from 'http';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as colors from 'colors/safe';
+import * as worker from 'worker_threads';
 
 interface Options {
     // print extra debug info
@@ -256,29 +256,26 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	const cacheFile = path.join(rootDir, 'node_modules', '.cache', 'ts-es-karma_eslintcache')
 	fs.mkdir(path.dirname(cacheFile)).catch(() => {/*ignore*/});
 
-	// API Doc: https://eslint.org/docs/developer-guide/nodejs-api
-	const eslint = new ESLint({
-	    cache: true, cacheLocation: cacheFile
-	});
-	let formatter = {format: (_results: any) => error('missing eslint formatter') };
-	eslint.loadFormatter('stylish').then((res) => formatter = res);
+	debug('Start eslint worker thread');
+	let workerUrl = new URL('./eslint.mjs', import.meta.url);
+
+	// Execute eslint inside a worker Thread so it can't block creating
+	// the karma output. Because for large projects it might take some time.
+	const eslintWorker = new worker.Worker(workerUrl, {
+	    workerData: {
+		initOpt: {
+		    cache: true, cacheLocation: cacheFile
+		},
+		runOpt: opt?.eslintFiles ?? './',
+		debug: opt?.debug,
+	    }
+	} as any);
 
 	return function(ok: boolean) {
 	    if(!ok && mode === 'normal') {
 		return;
 	    }
-	    let done = false;
-	    debug('start eslint');
-	    eslint.lintFiles(opt?.eslintFiles ?? './').then((results) => {
-		if(!done) {
-		    done = true;
-		    console.log(formatter.format(results));
-		} else {
-		    debug('Strange duplicate resolve of eslint promise');
-		}
-	    }).catch((err) => {
-		error('Eslint Failed', err);
-	    });
+	    eslintWorker.postMessage('run');
 	}
     }
     const eslintExecutor = initEslint();
