@@ -142,7 +142,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 
     // Based on https://github.com/Microsoft/TypeScript/wiki/Using-the-Compiler-API
     // create a full typescript watch mode but don't emit files only diagnostics
-    function initTypescript(finished: Function) {
+    function initTypescript(finished: (ok: boolean)=>void) {
 	debug('setup typescript');
 	const tsconfig = opt?.tsconfig ?? 'tsconfig.json';
 	if (!ts.sys.fileExists(tsconfig)) {
@@ -191,9 +191,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		return;
 	    }
 	    debug('Done typescript check.', Status.HasError ? 'With Errors' : 'Without Error');
-	    if(status !== Status.HasError) {
-		finished();
-	    }
+	    finished(status !== Status.HasError);
 	    status = Status.Done;
 	}
 
@@ -250,16 +248,25 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	ts.createWatchProgram(host);
     }
 
-    function initEslint() {
+    function initEslint(): (ok: boolean)=>void {
+	const mode = opt?.eslintRun || 'normal';
+	if(mode === 'never') {
+	    return function(_ok) {}
+	}
+	const cacheFile = path.join(rootDir, 'node_modules', '.cache', 'ts-es-karma_eslintcache')
+	fs.mkdir(path.dirname(cacheFile)).catch(() => {/*ignore*/});
+
 	// API Doc: https://eslint.org/docs/developer-guide/nodejs-api
 	const eslint = new ESLint({
-	    cache: true,
-	    cacheLocation: path.join(rootDir, 'node_modules', 'ts-es-karma_eslintcache')
+	    cache: true, cacheLocation: cacheFile
 	});
 	let formatter = {format: (_results: any) => error('missing eslint formatter') };
 	eslint.loadFormatter('stylish').then((res) => formatter = res);
 
-	return function() {
+	return function(ok: boolean) {
+	    if(!ok && mode === 'normal') {
+		return;
+	    }
 	    let done = false;
 	    debug('start eslint');
 	    eslint.lintFiles(opt?.eslintFiles ?? './').then((results) => {

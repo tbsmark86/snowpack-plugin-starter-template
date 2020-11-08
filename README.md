@@ -43,6 +43,8 @@ Typescript & Eslint & Karma are all peerDepedencies
   Don't start karma
 * eslintFiles?: string|string[];
   Pattern which files to eslint; Defaults to './'
+* eslintRun?: 'never'|'force'|'normal';
+  Disable eslint or run even with Typescript errors
 
 ## Karma
 
