@@ -15,6 +15,33 @@ Intendend Advantage:
 
 This of course is all heavly biased by personal taste.
 
+## Dependencies
+
+Typescript & Eslint & Karma are all peerDepedencies
+
+## Plugin-Options
+
+* debug?: boolean;
+  Print extra debug info
+* tsconfig?: string;
+  Alternate name for 'tsconfig.json'
+* karmaOutput?: string;
+  Where to write temporary files for karma unset to disable
+  (relative to current dir)
+  Karma should be configured to watch this folder to make any sense.
+  Also note that karma needs a proxy to the web_modules folder on
+  snowpack host.
+  If unset karma Server won't be started
+* karmaFilter?: (filename: string, content: string) => string;
+  Transform File before writing to karmaOutput
+  Depending on testing framework you might want to remove the
+  import because it must be accesed globaly. Note that clearing a line
+  without removing the line break keeps the sourcemap intact.
+* karmaConf?: string;
+  Alternate name for 'karma.config.js'
+* eslintFiles?: string|string[];
+  Pattern which files to eslint; Defaults to './'
+
 ## Development
 
 - `npm run build`: Build the template
