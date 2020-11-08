@@ -18,6 +18,8 @@ interface Options {
     karmaFilter?: (filename: string, content: string) => string;
     // alternate name for 'karma.config.js'
     karmaConf?: string;
+    // don't start Karma
+    karmaDisable: boolean;
     // eslint pattern, defaults to './'
     eslintFiles?: string|string[];
 }
@@ -56,6 +58,8 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 
     const host = 'http://'+ snowpackConfig.devOptions.hostname + ':' +snowpackConfig.devOptions.port + '/';
     const karmaOutput = opt?.karmaOutput ? path.join(rootDir, opt.karmaOutput) : false;
+    // delay karma start until first file is written
+    let startKarmaServer: Function|null = null;
     function outputFileForKarma(file: string) {
 	if(!karmaOutput) {
 	    return;
@@ -85,6 +89,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		} catch(err) {
 		    console.error(`Can\'t write ${karmaFile} for karma`, err);
 		}
+		startKarmaServer && startKarmaServer();
 	    });
 	}).on('error', (e) => {
 	    console.error(`Can\'t request ${file} for from snowpack-server`, e);
@@ -92,7 +97,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
     }
 
     function initKarma() {
-	if(!karmaOutput) {
+	if(!karmaOutput || opt?.karmaDisable) {
 	    debug('karma disabled');
 	    return;
 	}
@@ -102,7 +107,25 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	const karma = new Karma(karmaConfig, function(exitCode: any) {
 	    console.error('Karma has exited with ' + exitCode)
 	});
-	karma.start()
+	// On the first start there are no output-files available therefore
+	// karama complains over non-matching patterns.
+	// To work around this wait for the first file written (and a bit more)
+	// before actually starting the server.
+	//
+	// Beside this it also is more 'sane' to start on after each other.
+	startKarmaServer = function() {
+	    setTimeout(function() {
+		karma.start();
+	    }, 50);
+	    startKarmaServer = null;
+	}
+	// Handle SIGINT manually otherwise you need to press it twice to
+	// first kill karma
+	process.on('SIGINT', function() {
+	    console.log('[ts-es-karma] Exiting ...');
+	    karma.stop();
+	    process.exit();
+	});
     }
 
     // Based on https://github.com/Microsoft/TypeScript/wiki/Using-the-Compiler-API

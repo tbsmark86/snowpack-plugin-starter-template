@@ -39,8 +39,24 @@ Typescript & Eslint & Karma are all peerDepedencies
   without removing the line break keeps the sourcemap intact.
 * karmaConf?: string;
   Alternate name for 'karma.config.js'
+* karmaDisable?: booelan;
+  Don't start karma
 * eslintFiles?: string|string[];
   Pattern which files to eslint; Defaults to './'
+
+## Karma
+
+Example to getting karma to run:
+* for this plugin:
+  karmaOutput: 'build_test/',
+* for karma files:
+    files: [
+	 { pattern: snowpack_output + '/**/*.test.js', type: 'module' },
+    ]
+* and karma proxy (assuming default snowpack config)
+  proxies: {
+    '/base/build_test/web_modules/': 'http://localhost:8080/web_modules/',
+  }
 
 ## Development
 
