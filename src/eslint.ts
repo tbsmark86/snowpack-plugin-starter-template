@@ -38,6 +38,7 @@ worker.parentPort.on('message', (type) => {
 	    } else {
 		debug('Strange duplicate resolve of eslint promise');
 	    }
+	    worker?.parentPort?.postMessage('done');
 	}).catch((err) => {
 	    error('Eslint Failed', err);
 	});

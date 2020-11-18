@@ -60,6 +60,8 @@ Example to getting karma to run:
     '/base/build_test/web_modules/': 'http://localhost:8080/web_modules/',
   }
 
+Note: Karma is only active when snowpack is run as 'dev'
+
 ## Development
 
 - `npm run build`: Build the template

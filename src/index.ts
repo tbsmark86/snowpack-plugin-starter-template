@@ -20,18 +20,19 @@ interface Options {
     // alternate name for 'karma.config.js'
     karmaConf?: string;
     // don't start Karma
-    karmaDisable: boolean;
+    karmaDisable?: boolean;
     // eslint pattern, defaults to './'
     eslintFiles?: string|string[];
     // switch eslint handling
     eslintRun?: 'never'|'force'|'normal';
 }
 
-const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, opt?: Options) => {
+const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, opt_in?: Options) => {
     const rootDir = ts.sys.getCurrentDirectory();
+    const opt: Options = opt_in ?? {}
 
     let debug = function(..._args: any[]) {};
-    if(opt?.debug) {
+    if(opt.debug) {
 	debug = function(...args: any[]) {
 	    // white is grey ???
 	    console.debug(colors.white('[ts-es-karma]'), ...args)
@@ -68,7 +69,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
     }
 
     const host = 'http://'+ snowpackConfig.devOptions.hostname + ':' +snowpackConfig.devOptions.port + '/';
-    const karmaOutput = opt?.karmaOutput ? path.join(rootDir, opt.karmaOutput) : false;
+    let karmaOutput = opt.karmaOutput ? path.join(rootDir, opt.karmaOutput) : false;
     // delay karma start until first file is written
     let startKarmaServer: Function|null = null;
     function outputFileForKarma(file: string) {
@@ -89,8 +90,8 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		let karmaFile = path.join(karmaOutput, file);
 		debug('Write for karma', karmaFile);
 
-		if(opt?.karmaFilter) {
-		    rawData = opt?.karmaFilter(file, rawData);
+		if(opt.karmaFilter) {
+		    rawData = opt.karmaFilter(file, rawData);
 		}
 
 		try {
@@ -108,13 +109,13 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
     }
 
     function initKarma() {
-	if(!karmaOutput || opt?.karmaDisable) {
-	    info('Karma Disabled');
+	if(!karmaOutput || opt.karmaDisable) {
+	    info('Karma Disabled (Only allowed in dev mode)');
 	    return;
 	}
 	debug('start karma');
 	const Karma = require('karma').Server
-	const karmaConfig = { configFile: path.join(rootDir, opt?.karmaConf ?? 'karma.conf.js') };
+	const karmaConfig = { configFile: path.join(rootDir, opt.karmaConf ?? 'karma.conf.js') };
 	const karma = new Karma(karmaConfig, function(exitCode: any) {
 	    error('Karma has exited with ' + exitCode)
 	});
@@ -144,7 +145,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
     // create a full typescript watch mode but don't emit files only diagnostics
     function initTypescript(finished: (ok: boolean)=>void) {
 	debug('setup typescript');
-	const tsconfig = opt?.tsconfig ?? 'tsconfig.json';
+	const tsconfig = opt.tsconfig ?? 'tsconfig.json';
 	if (!ts.sys.fileExists(tsconfig)) {
 	    throw new Error("Could not find a valid `${tsconfig}`.");
 	}
@@ -248,10 +249,10 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	ts.createWatchProgram(host);
     }
 
-    function initEslint(): (ok: boolean)=>void {
-	const mode = opt?.eslintRun || 'normal';
+    function initEslint(): (ok: boolean)=>Promise<void> {
+	const mode = opt.eslintRun || 'normal';
 	if(mode === 'never') {
-	    return function(_ok) {}
+	    return function(_ok) {return Promise.resolve();}
 	}
 	const cacheFile = path.join(rootDir, 'node_modules', '.cache', 'ts-es-karma_eslintcache')
 	fs.mkdir(path.dirname(cacheFile)).catch(() => {/*ignore*/});
@@ -266,16 +267,25 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		initOpt: {
 		    cache: true, cacheLocation: cacheFile
 		},
-		runOpt: opt?.eslintFiles ?? './',
-		debug: opt?.debug,
+		runOpt: opt.eslintFiles ?? './',
+		debug: opt.debug,
 	    }
 	} as any);
 
-	return function(ok: boolean) {
-	    if(!ok && mode === 'normal') {
-		return;
+	let nextResolve: ()=>void|undefined;
+	eslintWorker.on('message', (type) => {
+	    if(type === 'done') {
+		nextResolve && nextResolve();
 	    }
+	});
+
+	return function(ok: boolean): Promise<void> {
+	    if(!ok && mode === 'normal') {
+		return Promise.resolve();
+	    }
+	    const ret = new Promise<void>((resolve) => {nextResolve = resolve});
 	    eslintWorker.postMessage('run');
+	    return ret;
 	}
     }
     const eslintExecutor = initEslint();
@@ -287,13 +297,25 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	config(realConfig: SnowpackConfig) {
 	    snowpackConfig = realConfig;
 	},
-	run() {
-	    // slightly decouple this startup so snowpack can finish first
-	    new Promise((resolve) => resolve()).then(() => {
-		initTypescript(eslintExecutor);
+	run({isDev}) {
+	    if(!isDev) {
+		// Karma is not useful during build mode
+		karmaOutput = false;
+		opt.karmaDisable = true;
+	    }
+
+	    return new Promise(async (resolve) => {
+		// slightly decouple this startup so snowpack can finish first
+		await new Promise((resolve2) => resolve2())
+
+		initTypescript(async (ok: boolean) => {
+		    await eslintExecutor(ok);
+		    // resolve run query once to allow snowpack to continue 
+		    // when in build mode.
+		    resolve();
+		});
 		initKarma();
 	    });
-	    return new Promise(() => {});
 	},
 	onChange(arg) {
 	    onChanged(arg.filePath);
