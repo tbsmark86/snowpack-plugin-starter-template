@@ -205,37 +205,40 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	    reportWatchStatusChanged
 	);
 
-	// XXX getSuggestionDiagnostics ?
-	/* program. ...v
-	//             getSyntacticDiagnostics,
-            getOptionsDiagnostics,
-            getGlobalDiagnostics,
-            getSemanticDiagnostics,
-            getCachedSemanticDiagnostics,
-            getSuggestionDiagnostics,
-            getDeclarationDiagnostics,
-            getBindAndCheckDiagnostics,
-            getProgramDiagnostics,
-	    */
-
 	const origCreateProgram = host.createProgram;
+	// guess path
+	let absBuildDir = rootDir + path.sep;
 	host.createProgram = (rootNames, options, host, oldProgram) => {
+	    // get real path from tsconfig
+	    if(options && options.outDir) {
+		// path is already absolute
+		absBuildDir = options.outDir + path.sep;
+	    }
 	    info('Run typescript check ...');
 	    status = Status.Running;
 	    return origCreateProgram(rootNames, options, host, oldProgram);
 	};
 
+	/*
+	 // In Language Server Mode Typescript has more Diagnostics but
+	 // I can't get them to work here :/
 	const origAfterProgramCreate = host.afterProgramCreate;
-	let absBuildDir = rootDir + path.sep;
 	host.afterProgramCreate = (program) => {
-	    const options = program.getCompilerOptions();
-	    if(options && options.outDir) {
-		// path is already absolute
-		absBuildDir = options.outDir + path.sep;
-	    }
+	    let p2 = program.getProgram();
+	    // This function seemd particularly interesting:
+	    console.log(p2.getSuggestionDiagnostics());
+
+	    console.log(p2.getSyntacticDiagnostics());
+	    console.log(p2.getSemanticDiagnostics());
+	    console.log(p2.getOptionsDiagnostics());
+	    console.log(p2.getGlobalDiagnostics());
+	    console.log(p2.getDeclartionDiagnostics());
+	    console.log(p2.getBindAndCheckDiagnostics());
+	    console.log(p2.getProgramDiagnostics());
 	    origAfterProgramCreate && origAfterProgramCreate(program);
-	    host.afterProgramCreate = origAfterProgramCreate;
-	}
+            host.afterProgramCreate = origAfterProgramCreate;
+        }
+	*/
 
 	let pendingWriteFiles: Record<string, boolean> = {};
 	
