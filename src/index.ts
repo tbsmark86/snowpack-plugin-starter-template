@@ -76,6 +76,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	if(!karmaOutput) {
 	    return;
 	}
+	debug('request file from snowpack builder', file);
 	http.get(host + file, (res) => {
 	    const { statusCode } = res;
 	    if (statusCode !== 200) {
@@ -87,7 +88,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	    let rawData = '';
 	    res.on('data', (chunk) => { rawData += chunk; });
 	    res.on('end', async () => {
-		let karmaFile = path.join(karmaOutput, file);
+		let karmaFile = path.join(karmaOutput as string, file);
 		debug('Write for karma', karmaFile);
 
 		if(opt.karmaFilter) {
@@ -193,7 +194,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	    }
 	    debug('Done typescript check.', Status.HasError ? 'With Errors' : 'Without Error');
 	    finished(status !== Status.HasError);
-	    status = Status.Done;
+	    flushWrites(status !== Status.HasError);
 	}
 
 	const host = ts.createWatchCompilerHost(
@@ -236,15 +237,41 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	    host.afterProgramCreate = origAfterProgramCreate;
 	}
 
-
+	let pendingWriteFiles: Record<string, boolean> = {};
+	
 	// Intercept emit to not emit anything but instead retrive the normal
 	// build result from snowpack. This result is then saved to a temporary
 	// directory where karma can pick it up.
 	(host as any).writeFile = (file: string) => {
-	    let relfile = file.replace(absBuildDir, '');
-	    debug('Typescript Hook writeFile', file, relfile);
-	    outputFileForKarma(relfile);
+	    debug('Typescript Hook writeFile', file);
+	    if(status === Status.Done) {
+		error(`Unexpected write of ${file} from typescript postponed`);
+	    }
+	    // However: We can't write them out know for tow reasons
+	    // a) the process is still busy doing typechecking and snowpack
+	    //    can't react
+	    // b) don't run karma if the code contains a critical error later on
+	    pendingWriteFiles[file] = true;
 	};
+
+	// Do the real write for files collected in the writeFile Hook
+	function flushWrites(ok: boolean) {
+	    if(!ok) {
+		debug('Skip karmaOutput because of Errors');
+		return;
+	    }
+	    const todo = Object.keys(pendingWriteFiles);
+	    pendingWriteFiles = {};
+	    if(!todo.length) {
+		info('No files changed');
+		return;
+	    }
+	    info(`Write ${todo.length} files to Karma-Output`);
+	    for(const file of todo) {
+		let relfile = file.replace(absBuildDir, '');
+		outputFileForKarma(relfile);
+	    }
+	}
 
 	ts.createWatchProgram(host);
     }
