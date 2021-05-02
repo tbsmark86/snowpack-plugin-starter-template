@@ -111,7 +111,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 
     function initKarma() {
 	if(!karmaOutput || opt.karmaDisable) {
-	    info('Karma Disabled (Only allowed in dev mode)');
+	    info('Karma Disabled (Only allowed in dev-watch mode)');
 	    return;
 	}
 	debug('start karma');
@@ -242,7 +242,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 
 	let pendingWriteFiles: Record<string, boolean> = {};
 	
-	// Intercept emit to not emit anything but instead retrive the normal
+	// Intercept emit to not emit anything but instead retrieve the normal
 	// build result from snowpack. This result is then saved to a temporary
 	// directory where karma can pick it up.
 	(host as any).writeFile = (file: string) => {
@@ -259,8 +259,8 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 
 	// Do the real write for files collected in the writeFile Hook
 	function flushWrites(ok: boolean) {
-	    if(!ok) {
-		debug('Skip karmaOutput because of Errors');
+	    if(!ok || !karmaOutput) {
+		debug('Skip output for karma');
 		return;
 	    }
 	    const todo = Object.keys(pendingWriteFiles);
@@ -328,10 +328,16 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	    snowpackConfig = realConfig;
 	},
 	run({isDev}) {
-	    if(!isDev) {
+	    // Snowpack does not expose wether we're in build mode or not :/
+	    // while isDev maybe false for build it could be true if --watch
+	    // is used.
+	    if(!isDev || process.argv.includes('build')) {
+		debug('start in build mode');
 		// Karma is not useful during build mode
 		karmaOutput = false;
 		opt.karmaDisable = true;
+	    } else {
+		debug('start in dev mode');
 	    }
 
 	    return new Promise(async (resolve) => {
