@@ -3,7 +3,7 @@
 This is a different take on running the Typescript type-checker. The aim is more
 smooth output in a 'stream' style log in watch mode.
 Once Typescript is error free eslint is called to get even more checks.
-At last output ist written to a tmp-directory where karma can pickup changed
+At last output is written to a tmp-directory where karma can pickup changed
 files.
 
 Intendend Advantage:
