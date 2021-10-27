@@ -1,7 +1,7 @@
 {
   "license": "MIT",
   "name": "snowpack-typescript-eslint-karma",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "scripts": {
     "build": "pika build; cp -p pkg/dist-src/eslint.js pkg/dist-node/eslint.mjs",
     "deploy": "pika publish",
@@ -30,8 +30,5 @@
     "eslint": ">= 7.10.0",
     "karma": ">= 4.4.0",
     "typescript": ">= 4.0.0"
-  },
-  "dependencies": {
-    "colors": "^1.4.0"
   }
 }

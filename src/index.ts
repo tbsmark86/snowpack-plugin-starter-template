@@ -1,10 +1,10 @@
 import type { SnowpackPluginFactory, SnowpackConfig } from 'snowpack';
+import { logger } from 'snowpack';
 
 import * as ts from 'typescript';
 import * as http from 'http';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import * as colors from 'colors/safe';
 import * as worker from 'worker_threads';
 
 interface Options {
@@ -27,23 +27,19 @@ interface Options {
     eslintRun?: 'never'|'force'|'normal';
 }
 
+function debug(arg: string) {
+    logger.debug(arg, {name: 'ts-es-karma/debug'})
+}
+function info(arg: string) {
+    logger.info(arg, {name: 'ts-es-karma'});
+}
+function error(arg: string) {
+    logger.error(arg, {name: 'ts-es-karma'});
+}
+
 const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, opt_in?: Options) => {
     const rootDir = ts.sys.getCurrentDirectory();
     const opt: Options = opt_in ?? {}
-
-    let debug = function(..._args: any[]) {};
-    if(opt.debug) {
-	debug = function(...args: any[]) {
-	    // white is grey ???
-	    console.debug(colors.white('[ts-es-karma]'), ...args)
-	};
-    }
-    function info(...args: any[]) {
-	console.info(colors.green('[ts-es-karma]'), ...args);
-    }
-    function error(...args: any[]) {
-	console.error(colors.red('[ts-es-karma]'), ...args);
-    }
 
     // Map Watche Requests form Typescript to Snowpack
     let watched: Record<string, Function[]> = {};
@@ -62,7 +58,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		try {
 		    cb(file, ts.FileWatcherEventKind.Changed);
 		} catch(err) {
-		    error(`Failed to execute typescript-watcher for ${file}`, err);
+		    error(`Failed to execute typescript-watcher for ${file}: ${err}`);
 		}
 	    }
 	}
@@ -76,7 +72,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	if(!karmaOutput) {
 	    return;
 	}
-	debug('request file from snowpack builder', file);
+	debug(`request '${file}' from snowpack builder`);
 	http.get(host + file, (res) => {
 	    const { statusCode } = res;
 	    if (statusCode !== 200) {
@@ -89,7 +85,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	    res.on('data', (chunk) => { rawData += chunk; });
 	    res.on('end', async () => {
 		let karmaFile = path.join(karmaOutput as string, file);
-		debug('Write for karma', karmaFile);
+		debug(`Write '${karmaFile}' for karma`);
 
 		if(opt.karmaFilter) {
 		    rawData = opt.karmaFilter(file, rawData);
@@ -98,14 +94,13 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		try {
 		    await fs.mkdir(path.dirname(karmaFile), {recursive:true})
 		    await fs.writeFile(karmaFile, rawData, 'utf-8');
-		    debug('Push to karma', karmaFile);
 		} catch(err) {
-		    error(`Can\'t write ${karmaFile} for karma`, err);
+		    error(`Can\'t write ${karmaFile} for karma: ${err}`);
 		}
 		startKarmaServer && startKarmaServer();
 	    });
 	}).on('error', (e) => {
-	    error(`Can\'t request ${file} for from snowpack-server`, e);
+	    error(`Can't request ${file} for from snowpack-server: ${e}`);
 	});
     }
 
@@ -114,7 +109,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	    info('Karma Disabled (Only allowed in dev-watch mode)');
 	    return;
 	}
-	debug('start karma');
+	debug('Start karma');
 	const Karma = require('karma').Server
 	const karmaConfig = { configFile: path.join(rootDir, opt.karmaConf ?? 'karma.conf.js') };
 	const karma = new Karma(karmaConfig, function(exitCode: any) {
@@ -145,7 +140,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
     // Based on https://github.com/Microsoft/TypeScript/wiki/Using-the-Compiler-API
     // create a full typescript watch mode but don't emit files only diagnostics
     function initTypescript(finished: (ok: boolean)=>void) {
-	debug('setup typescript');
+	debug('Setup typescript');
 	const tsconfig = opt.tsconfig ?? 'tsconfig.json';
 	if (!ts.sys.fileExists(tsconfig)) {
 	    throw new Error("Could not find a valid `${tsconfig}`.");
@@ -192,7 +187,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		// Just starting a new round ...
 		return;
 	    }
-	    debug('Done typescript check.', Status.HasError ? 'With Errors' : 'Without Error');
+	    debug(`Done typescript check: ${Status.HasError ? 'With Errors' : 'Without Error'}`);
 	    finished(status !== Status.HasError);
 	    flushWrites(status !== Status.HasError);
 	}
@@ -246,7 +241,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 	// build result from snowpack. This result is then saved to a temporary
 	// directory where karma can pick it up.
 	(host as any).writeFile = (file: string) => {
-	    debug('Typescript Hook writeFile', file);
+	    debug(`Typescript Hook write: '${file}'`);
 	    if(status === Status.Done) {
 		error(`Unexpected write of ${file} from typescript postponed`);
 	    }
@@ -297,8 +292,7 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		initOpt: {
 		    cache: true, cacheLocation: cacheFile
 		},
-		runOpt: opt.eslintFiles ?? './',
-		debug: opt.debug,
+		runOpt: opt.eslintFiles ?? './'
 	    }
 	} as any);
 
@@ -340,9 +334,9 @@ const plugin: SnowpackPluginFactory<Options> = (snowpackConfig: SnowpackConfig, 
 		debug('start in dev mode');
 	    }
 
-	    return new Promise(async (resolve) => {
+	    return new Promise<void>(async (resolve) => {
 		// slightly decouple this startup so snowpack can finish first
-		await new Promise((resolve2) => resolve2())
+		await new Promise<void>((resolve2) => resolve2())
 
 		initTypescript(async (ok: boolean) => {
 		    await eslintExecutor(ok);

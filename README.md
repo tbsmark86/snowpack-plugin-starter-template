@@ -21,8 +21,6 @@ Typescript & Eslint & Karma are all peerDepedencies
 
 ## Plugin-Options
 
-* debug?: boolean;
-  Print extra debug info
 * tsconfig?: string;
   Alternate name for 'tsconfig.json'
 * karmaOutput?: string;
